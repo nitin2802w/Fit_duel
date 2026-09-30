@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FitDuel AI Engine — Demo</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        background: #0f0f0f;
+        color: #fff;
+        font-family: "Segoe UI", sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        padding: 24px;
+      }
+      h1 { font-size: 1.6rem; color: #00e676; }
+      #container { position: relative; width: 640px; height: 480px; }
+      #video  { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+      #canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+      #hud {
+        width: 640px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+      .card {
+        background: #1e1e1e;
+        border-radius: 10px;
+        padding: 14px 18px;
+        border: 1px solid #333;
+      }
+      .card .label { font-size: 0.72rem; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+      .card .value { font-size: 2rem; font-weight: 700; color: #00e676; }
+      .card .value.warn { color: #ff5252; }
+      .card .value.neutral { color: #fff; }
+      #feedback-box {
+        width: 640px;
+        background: #1a2a1a;
+        border: 1px solid #00e676;
+        border-radius: 10px;
+        padding: 14px 18px;
+        font-size: 1.1rem;
+        min-height: 54px;
+      }
+      #progress-bar-wrap { width: 640px; }
+      #progress-bar {
+        height: 8px;
+        background: #333;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      #progress-fill {
+        height: 100%;
+        background: #00e676;
+        width: 0%;
+        transition: width 0.1s;
+      }
+      #start-btn {
+        padding: 12px 36px;
+        font-size: 1rem;
+        background: #00e676;
+        color: #000;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      #start-btn:hover { background: #00c853; }
+    </style>
+  </head>
+  <body>
+    <h1>🏋️ FitDuel AI Engine — Demo</h1>
+
+    <button id="start-btn">Start Camera</button>
+
+    <div id="container">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <div id="hud">
+      <div class="card">
+        <div class="label">Phase</div>
+        <div class="value neutral" id="hud-state">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Reps</div>
+        <div class="value" id="hud-reps">0</div>
+      </div>
+      <div class="card">
+        <div class="label">Stage</div>
+        <div class="value neutral" id="hud-stage">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Elbow angle</div>
+        <div class="value neutral" id="hud-elbow">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Back angle</div>
+        <div class="value neutral" id="hud-back">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Confidence</div>
+        <div class="value neutral" id="hud-conf">—</div>
+      </div>
+    </div>
+
+    <div id="progress-bar-wrap">
+      <div style="font-size:0.8rem;color:#888;margin-bottom:4px;">Calibration progress</div>
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+    </div>
+
+    <div id="feedback-box" id="feedback">Waiting...</div>
+
+    <script type="module">
+      import { FitDuelEngine } from "../src/index.ts";
+
+      const video  = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx    = canvas.getContext("2d");
+
+      const hudState  = document.getElementById("hud-state");
+      const hudReps   = document.getElementById("hud-reps");
+      const hudStage  = document.getElementById("hud-stage");
+      const hudElbow  = document.getElementById("hud-elbow");
+      const hudBack   = document.getElementById("hud-back");
+      const hudConf   = document.getElementById("hud-conf");
+      const progFill  = document.getElementById("progress-fill");
+      const feedback  = document.getElementById("feedback-box");
+
+      let engine = null;
+      let lastTs  = 0;
+
+      document.getElementById("start-btn").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        await video.play();
+
+        canvas.width  = video.videoWidth  || 640;
+        canvas.height = video.videoHeight || 480;
+
+        engine = await FitDuelEngine.create({
+          onFrame(result) {
+            // Update HUD
+            hudState.textContent  = result.appState;
+            hudReps.textContent   = String(result.rep.count);
+            hudStage.textContent  = result.rep.stage;
+            hudElbow.textContent  = result.elbowAngle !== null ? `${result.elbowAngle.toFixed(0)}°` : "—";
+            hudBack.textContent   = result.backAngle  !== null ? `${result.backAngle.toFixed(0)}°`  : "—";
+            hudConf.textContent   = `${(result.confidence * 100).toFixed(0)}%`;
+            progFill.style.width  = `${(result.calibrationProgress * 100).toFixed(0)}%`;
+            feedback.textContent  = result.rep.feedback;
+          },
+          onRepEvent(event) {
+            console.log("[RepEvent]", event);
+          },
+        });
+
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "r" || e.key === "R") engine.realign();
+        });
+
+        function loop(ts) {
+          if (ts !== lastTs) {
+            lastTs = ts;
+            engine.processVideoFrame(video, ts);
+          }
+          requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+      });
+    </script>
+  </body>
+</html>

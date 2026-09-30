@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  # ── Core API ──────────────────────────────────────────────────────
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://fitduel:fitduel@postgres:5432/fitduel
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+
+  # ── Realtime Match Engine ─────────────────────────────────────────
+  realtime:
+    build: ./realtime
+    ports:
+      - "8001:8001"
+    environment:
+      REDIS_URL: redis://redis:6379
+      API_URL: http://api:8000
+    depends_on:
+      - redis
+      - api
+
+  # ── Matchmaking ───────────────────────────────────────────────────
+  matchmaking:
+    build: ./matchmaking
+    environment:
+      REDIS_URL: redis://redis:6379
+      API_URL: http://api:8000
+    depends_on:
+      - redis
+      - api
+
+  # ── PostgreSQL ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fitduel
+      POSTGRES_PASSWORD: fitduel
+      POSTGRES_DB: fitduel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # ── Redis ─────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
